@@ -1,0 +1,49 @@
+{
+  "variables": {
+    "aws_access_key": "",
+    "aws_secret_key": "",
+    "atlas_token": ""
+  },
+  
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "access_key": "{{user `aws_access_key`}}",
+      "secret_key": "{{user `aws_secret_key`}}",
+      "region": "ap-south-1",
+      "source_ami": "ami-2ed19c41",
+      "instance_type": "t2.micro",
+      "ssh_username": "ec2-user",
+      "ami_name": "test-ami-{{timestamp}}"
+    }
+  ],
+  
+  "provisioners": [
+    {
+      "type": "file",
+      "source": "./index.html",
+      "destination": "/tmp/"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sleep 30",
+        "sudo yum install httpd -y",
+        "sudo chkconfig httpd on",
+        "sudo mv /tmp/index.html /var/www/html/"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "atlas",
+      "token": "{{user `atlas_token`}}",
+      "artifact": "atlas_username/myamis",
+      "artifact_type": "amazon.image",
+      "metadata": {
+        "created_at": "{{timestamp}}",
+        "comment": "This is test AMI only for Dev environment"
+      }
+    }
+  ]
+}
