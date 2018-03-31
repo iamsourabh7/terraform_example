@@ -1,0 +1,193 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "My first CFN template.",
+  
+  "Parameters": {
+    "KeyName": {
+	  "Type": "AWS::EC2::KeyPair::KeyName",
+	  "Description": "Name of existing key pair."
+	},
+	"EC2InstanceType": {
+	  "Type": "String",
+	  "Description": "EC2 Instance Type.",
+	  "Default": "t2.micro",
+	  "AllowedValues": ["t2.xlarge", "t2.small", "t2.nano", "t2.micro", "t2.medium", "t2.large", "t2.2xlarge", "m4.xlarge", "m4.large", "m4.4xlarge", "m4.2xlarge", "m4.16xlarge", "m4.10xlarge", "m3.xlarge", "m3.medium", "m3.large", "m3.2xlarge", "c4.xlarge", "c4.large", "c4.8xlarge", "c4.4xlarge", "c4.2xlarge"]
+	}
+  },
+  
+  "Mappings": {
+    "AWSRegionToAMI": {
+	  "us-east-1": {"AMI": "ami-1853ac65"},
+	  "us-east-2": {"AMI": "ami-25615740"},
+	  "us-west-1": {"AMI": "ami-bf5540df"},
+	  "us-west-2": {"AMI": "ami-d874e0a0"}
+	}
+  },
+  
+  "Resources": {
+    
+	"VPC": {
+	  "Type": "AWS::EC2::VPC",
+	  "Properties": {
+	    "EnableDnsSupport": "true",
+		"CidrBlock": "10.10.0.0/16",
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "vpc"]]}}]
+	  }
+	},
+	
+	"PublicSubnet": {
+	  "Type": "AWS::EC2::Subnet",
+	  "Properties": {
+	    "AvailabilityZone": {"Fn::Join": ["", [{"Ref": "AWS::Region"}, "c"]]},
+		"VpcId": {"Ref": "VPC"},
+		"CidrBlock": "10.10.1.0/24",
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pub-sub"]]}}]
+	  }
+	},
+	
+	"PrivateSubnet": {
+	  "Type": "AWS::EC2::Subnet",
+	  "Properties": {
+	    "AvailabilityZone": {"Fn::Join": ["", [{"Ref": "AWS::Region"}, "b"]]},
+		"VpcId": {"Ref": "VPC"},
+		"CidrBlock": "10.10.2.0/24",
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pri-sub"]]}}]
+	  }
+	},
+	
+	"InternetGateway": {
+	  "Type": "AWS::EC2::InternetGateway",
+	  "Properties": {
+	    "Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "igw"]]}}]
+	  }
+	},
+	
+	"VPCGatewayAttachment": {
+	  "Type": "AWS::EC2::VPCGatewayAttachment",
+	  "Properties": {
+	    "VpcId": {"Ref": "VPC"},
+		"InternetGatewayId": {"Ref": "InternetGateway"}
+	  }
+	},
+	
+	"RouteTable": {
+	  "Type": "AWS::EC2::RouteTable",
+	  "Properties": {
+	    "VpcId": {"Ref": "VPC"},
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pub-rt"]]}}]
+	  }
+	},
+	
+	"RouteRule": {
+	  "Type": "AWS::EC2::Route",
+	  "DependsOn": "VPCGatewayAttachment",
+	  "Properties": {
+	    "RouteTableId": {"Ref": "RouteTable"},
+		"DestinationCidrBlock": "0.0.0.0/0",
+		"GatewayId": {"Ref": "InternetGateway"}
+	  }
+	},
+	
+	"SubnetRouteTableAssociation": {
+	  "Type": "AWS::EC2::SubnetRouteTableAssociation",
+	  "Properties": {
+	    "SubnetId": {"Ref": "PublicSubnet"},
+		"RouteTableId": {"Ref": "RouteTable"}
+	  }
+	},
+	
+	"EC2SecurityGroup": {
+	  "Type": "AWS::EC2::SecurityGroup",
+	  "Properties": {
+	    "GroupDescription": "SG for EC2 instance.",
+		"VpcId": {"Ref": "VPC"},
+		"SecurityGroupIngress": [{
+		  "IpProtocol": "tcp",
+		  "FromPort": "80",
+		  "ToPort": "80",
+		  "CidrIp": "10.10.0.0/16"
+		}],
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "ec2-sg"]]}}]
+	  }
+	},
+	
+	"ELBSecurityGroup": {
+	  "Type": "AWS::EC2::SecurityGroup",
+	  "Properties": {
+	    "GroupDescription": "SG for ELB instance.",
+		"VpcId": {"Ref": "VPC"},
+		"SecurityGroupIngress": [{
+		  "IpProtocol": "tcp",
+		  "FromPort": "80",
+		  "ToPort": "80",
+		  "CidrIp": "0.0.0.0/0"
+		}],
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "elb-sg"]]}}]
+	  }
+	},
+	
+	"EC2Instance": {
+	  "Type": "AWS::EC2::Instance",
+	  "DependsOn": "VPCGatewayAttachment",
+	  "Properties": {
+	    "ImageId": {"Fn::FindInMap": ["AWSRegionToAMI", {"Ref": "AWS::Region"}, "AMI"]},
+		"InstanceType": {"Ref": "EC2InstanceType"},
+		"KeyName": {"Ref": "KeyName"},
+		"NetworkInterfaces": [{
+		  "GroupSet": [{"Ref": "EC2SecurityGroup"}],
+		  "AssociatePublicIpAddress": "true",
+		  "DeviceIndex": "0",
+		  "DeleteOnTermination": "true",
+		  "SubnetId": {"Ref": "PublicSubnet"}
+		}],
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "instance"]]}}],
+		"UserData": {"Fn::Base64": {"Fn::Join": ["\n", [
+		  "#!/bin/bash",
+		  "yum install nginx -y",
+		  "service nginx start"
+		]]}}
+	  }
+	},
+	
+	"ELB": {
+	  "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+	  "Properties": {
+	    "Subnets": [{"Ref": "PublicSubnet"}, {"Ref": "PrivateSubnet"}],
+		"Instances": [{"Ref": "EC2Instance"}],
+		"SecurityGroups": [{"Ref": "ELBSecurityGroup"}],
+		"ConnectionDrainingPolicy": {
+		  "Enabled": "true",
+		  "Timeout": "180"
+		},
+		"Listeners": [{
+		  "LoadBalancerPort": "80",
+		  "InstancePort": "80",
+		  "Protocol": "HTTP"
+		}],
+		"HealthCheck": {
+		  "Target": {"Fn::Join": ["", ["HTTP", ":", "80", "/"]]},
+		  "HealthyThreshold": "3",
+		  "UnhealthyThreshold": "5",
+		  "Interval": "30",
+		  "Timeout": "5"
+		},
+		"Tags": [{"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "elb"]]}}]
+	  }
+	}
+  },
+  
+  "Outputs": {
+    "DNSName": {
+	  "Description": "DNS name of ELB",
+	  "Value": {"Fn::Join": ["", ["http://", {"Fn::GetAtt": ["ELB", "DNSName"]}]]}
+	}
+  }
+}
+
+
+
+
+
+
+
+
